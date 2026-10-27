@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIGAP Sawit – Sistem Informasi Geografis Perkebunan Kelapa Sawit</title>
+  
+  <!-- Leaflet CSS HD -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          },
+          colors: {
+            emerald: {
+              950: '#062c19',
+              900: '#0f5132',
+              800: '#146c43',
+              700: '#198754',
+              600: '#20c997',
+              500: '#22c55e'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Leaflet JS & Turf.js -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+
+  <!-- React & Babel for In-Browser Execution -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #020617;
+      color: #f8fafc;
+      overflow-x: hidden;
+    }
+    .leaflet-container {
+      background-color: #0b1329 !important;
+      font-family: 'Inter', sans-serif !important;
+    }
+    .leaflet-popup-content-wrapper {
+      background: #ffffff !important;
+      color: #0f172a !important;
+      border-radius: 14px !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+      border: 1px solid #94a3b8 !important;
+      padding: 4px !important;
+    }
+    .leaflet-popup-tip {
+      background: #ffffff !important;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #059669;
+    }
+    @media print {
+      body { background-color: #ffffff !important; color: #000000 !important; }
+      aside, header, button { display: none !important; }
+      main { width: 100% !important; padding: 0 !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+  <div id="root"></div>
+
+  <!-- COMPLETE PRESENTATION-READY APPLICATION WITH AUTO-PLAYING DEMO TOUR -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Helper Color Functions
+    const getProductivityColor = (p) => {
+      if (p < 15) return '#ef4444';
+      if (p < 20) return '#f97316';
+      if (p < 25) return '#eab308';
+      if (p < 30) return '#22c55e';
+      return '#15803d';
+    };
+
+    const getAgeColor = (age) => {
+      if (age <= 3) return '#0284c7';
+      if (age <= 7) return '#10b981';
+      if (age <= 15) return '#15803d';
+      if (age <= 20) return '#f97316';
+      return '#dc2626';
+    };
+
+    const getHarvestStatusColor = (status) => {
+      if (status === 'Sedang Dipanen') return '#eab308';
+      if (status === 'Siap Panen') return '#22c55e';
+      return '#3b82f6';
+    };
+
+    const getProductivityBadgeClass = (p) => {
+      if (p < 15) return 'bg-red-950 text-red-400 border border-red-800';
+      if (p < 20) return 'bg-orange-950 text-orange-400 border border-orange-800';
+      if (p < 25) return 'bg-yellow-950 text-yellow-400 border border-yellow-800';
+      if (p < 30) return 'bg-green-950 text-green-400 border border-green-800';
+      return 'bg-emerald-950 text-emerald-300 border border-emerald-700';
+    };
+
+    // GeoJSON Blocks (15 Plantation Polygons)
+    const INITIAL_BLOCKS_GEOJSON = {
+      "type": "FeatureCollection",
+      "name": "SIGAP_Sawit_Blocks",
+      "features": [
+        { "type": "Feature", "properties": { "id": 1, "kode_blok": "A01", "afdeling": "Afdeling 1", "luas": 25.4, "tahun_tanam": 2018, "varietas": "DxP Socfindo", "umur_tanaman": 8, "jumlah_pokok": 3450, "pokok_produktif": 3380, "pokok_mati": 40, "pokok_sisipan": 30, "produktivitas": 24.2, "produksi": 615000, "status_panen": "Siap Panen", "status_tanaman": "TM", "kondisi": "Baik", "pemupukan_terakhir": "2026-02-15 (NPK 15-15-15)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.430, 0.530], [101.436, 0.530], [101.436, 0.524], [101.430, 0.524], [101.430, 0.530]]] } },
+        { "type": "Feature", "properties": { "id": 2, "kode_blok": "A02", "afdeling": "Afdeling 1", "luas": 26.1, "tahun_tanam": 2017, "varietas": "Marihat", "umur_tanaman": 9, "jumlah_pokok": 3540, "pokok_produktif": 3500, "pokok_mati": 20, "pokok_sisipan": 20, "produktivitas": 28.5, "produksi": 743850, "status_panen": "Sedang Dipanen", "status_tanaman": "TM", "kondisi": "Sangat Baik", "pemupukan_terakhir": "2026-01-20 (Urea)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.436, 0.530], [101.442, 0.530], [101.442, 0.524], [101.436, 0.524], [101.436, 0.530]]] } },
+        { "type": "Feature", "properties": { "id": 3, "kode_blok": "A03", "afdeling": "Afdeling 1", "luas": 24.8, "tahun_tanam": 2019, "varietas": "Dami Mas", "umur_tanaman": 7, "jumlah_pokok": 3280, "pokok_produktif": 3220, "pokok_mati": 35, "pokok_sisipan": 25, "produktivitas": 25.4, "produksi": 629920, "status_panen": "Belum Panen", "status_tanaman": "TM", "kondisi": "Baik", "pemupukan_terakhir": "2026-02-10 (KCL)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.442, 0.530], [101.448, 0.530], [101.448, 0.524], [101.442, 0.524], [101.442, 0.530]]] } },
+        { "type": "Feature", "properties": { "id": 4, "kode_blok": "A04", "afdeling": "Afdeling 1", "luas": 27.2, "tahun_tanam": 2015, "varietas": "Topaz", "umur_tanaman": 11, "jumlah_pokok": 3680, "pokok_produktif": 3610, "pokok_mati": 45, "pokok_sisipan": 25, "produktivitas": 31.8, "produksi": 864960, "status_panen": "Sedang Dipanen", "status_tanaman": "TM", "kondisi": "Sangat Baik", "pemupukan_terakhir": "2026-01-15 (Rock Phosphate)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.430, 0.524], [101.436, 0.524], [101.436, 0.518], [101.430, 0.518], [101.430, 0.524]]] } },
+        { "type": "Feature", "properties": { "id": 5, "kode_blok": "A05", "afdeling": "Afdeling 1", "luas": 23.9, "tahun_tanam": 2024, "varietas": "DxP Socfindo", "umur_tanaman": 2, "jumlah_pokok": 3220, "pokok_produktif": 0, "pokok_mati": 50, "pokok_sisipan": 40, "produktivitas": 13.5, "produksi": 322650, "status_panen": "Belum Panen", "status_tanaman": "TBM", "kondisi": "Perlu Perhatian", "pemupukan_terakhir": "2025-11-20 (Dolomit)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.436, 0.524], [101.442, 0.524], [101.442, 0.518], [101.436, 0.518], [101.436, 0.524]]] } },
+        { "type": "Feature", "properties": { "id": 6, "kode_blok": "B01", "afdeling": "Afdeling 2", "luas": 25.0, "tahun_tanam": 2016, "varietas": "Marihat", "umur_tanaman": 10, "jumlah_pokok": 3400, "pokok_produktif": 3360, "pokok_mati": 25, "pokok_sisipan": 15, "produktivitas": 30.2, "produksi": 755000, "status_panen": "Sedang Dipanen", "status_tanaman": "TM", "kondisi": "Sangat Baik", "pemupukan_terakhir": "2026-02-01 (NPK)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.448, 0.530], [101.454, 0.530], [101.454, 0.524], [101.448, 0.524], [101.448, 0.530]]] } },
+        { "type": "Feature", "properties": { "id": 7, "kode_blok": "B02", "afdeling": "Afdeling 2", "luas": 26.5, "tahun_tanam": 2018, "varietas": "Dami Mas", "umur_tanaman": 8, "jumlah_pokok": 3580, "pokok_produktif": 3490, "pokok_mati": 50, "pokok_sisipan": 40, "produktivitas": 22.8, "produksi": 604200, "status_panen": "Siap Panen", "status_tanaman": "TM", "kondisi": "Cukup", "pemupukan_terakhir": "2026-01-10 (Borate)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.454, 0.530], [101.460, 0.530], [101.460, 0.524], [101.454, 0.524], [101.454, 0.530]]] } },
+        { "type": "Feature", "properties": { "id": 8, "kode_blok": "B03", "afdeling": "Afdeling 2", "luas": 24.1, "tahun_tanam": 2020, "varietas": "Topaz", "umur_tanaman": 6, "jumlah_pokok": 3250, "pokok_produktif": 3100, "pokok_mati": 90, "pokok_sisipan": 60, "produktivitas": 17.8, "produksi": 428980, "status_panen": "Belum Panen", "status_tanaman": "TM", "kondisi": "Perlu Perhatian", "pemupukan_terakhir": "Belum dilakukan (Pending)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.442, 0.524], [101.448, 0.524], [101.448, 0.518], [101.442, 0.518], [101.442, 0.524]]] } },
+        { "type": "Feature", "properties": { "id": 9, "kode_blok": "B04", "afdeling": "Afdeling 2", "luas": 28.4, "tahun_tanam": 2017, "varietas": "DxP Socfindo", "umur_tanaman": 9, "jumlah_pokok": 3840, "pokok_produktif": 3790, "pokok_mati": 30, "pokok_sisipan": 20, "produktivitas": 27.5, "produksi": 781000, "status_panen": "Sedang Dipanen", "status_tanaman": "TM", "kondisi": "Baik", "pemupukan_terakhir": "2026-02-05 (Urea)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.448, 0.524], [101.454, 0.524], [101.454, 0.518], [101.448, 0.518], [101.448, 0.524]]] } },
+        { "type": "Feature", "properties": { "id": 10, "kode_blok": "B05", "afdeling": "Afdeling 2", "luas": 22.8, "tahun_tanam": 2019, "varietas": "Marihat", "umur_tanaman": 7, "jumlah_pokok": 3080, "pokok_produktif": 3010, "pokok_mati": 40, "pokok_sisipan": 30, "produktivitas": 21.0, "produksi": 478800, "status_panen": "Siap Panen", "status_tanaman": "TM", "kondisi": "Baik", "pemupukan_terakhir": "2026-01-25 (KCL)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.454, 0.524], [101.460, 0.524], [101.460, 0.518], [101.454, 0.518], [101.454, 0.524]]] } },
+        { "type": "Feature", "properties": { "id": 11, "kode_blok": "C01", "afdeling": "Afdeling 3", "luas": 26.0, "tahun_tanam": 2023, "varietas": "Dami Mas", "umur_tanaman": 3, "jumlah_pokok": 3510, "pokok_produktif": 0, "pokok_mati": 60, "pokok_sisipan": 50, "produktivitas": 14.7, "produksi": 382200, "status_panen": "Belum Panen", "status_tanaman": "TBM", "kondisi": "Perlu Perhatian", "pemupukan_terakhir": "2025-12-05 (Dolomit)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.430, 0.518], [101.436, 0.518], [101.436, 0.512], [101.430, 0.512], [101.430, 0.518]]] } },
+        { "type": "Feature", "properties": { "id": 12, "kode_blok": "C02", "afdeling": "Afdeling 3", "luas": 25.5, "tahun_tanam": 2020, "varietas": "Topaz", "umur_tanaman": 6, "jumlah_pokok": 3440, "pokok_produktif": 3280, "pokok_mati": 110, "pokok_sisipan": 50, "produktivitas": 19.5, "produksi": 497250, "status_panen": "Siap Panen", "status_tanaman": "TM", "kondisi": "Perlu Perhatian", "pemupukan_terakhir": "2026-01-05 (NPK)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.436, 0.518], [101.442, 0.518], [101.442, 0.512], [101.436, 0.512], [101.436, 0.518]]] } },
+        { "type": "Feature", "properties": { "id": 13, "kode_blok": "C03", "afdeling": "Afdeling 3", "luas": 27.8, "tahun_tanam": 2016, "varietas": "DxP Socfindo", "umur_tanaman": 10, "jumlah_pokok": 3750, "pokok_produktif": 3690, "pokok_mati": 35, "pokok_sisipan": 25, "produktivitas": 29.1, "produksi": 808980, "status_panen": "Belum Panen", "status_tanaman": "TM", "kondisi": "Sangat Baik", "pemupukan_terakhir": "2026-02-12 (Urea)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.442, 0.518], [101.448, 0.518], [101.448, 0.512], [101.442, 0.512], [101.442, 0.518]]] } },
+        { "type": "Feature", "properties": { "id": 14, "kode_blok": "C04", "afdeling": "Afdeling 3", "luas": 24.3, "tahun_tanam": 2015, "varietas": "Marihat", "umur_tanaman": 11, "jumlah_pokok": 3280, "pokok_produktif": 3230, "pokok_mati": 30, "pokok_sisipan": 20, "produktivitas": 32.4, "produksi": 787320, "status_panen": "Sedang Dipanen", "status_tanaman": "TM", "kondisi": "Sangat Baik", "pemupukan_terakhir": "2026-01-18 (Rock Phosphate)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.448, 0.518], [101.454, 0.518], [101.454, 0.512], [101.448, 0.518], [101.448, 0.518]]] } },
+        { "type": "Feature", "properties": { "id": 15, "kode_blok": "C05", "afdeling": "Afdeling 3", "luas": 23.5, "tahun_tanam": 2018, "varietas": "Dami Mas", "umur_tanaman": 8, "jumlah_pokok": 3170, "pokok_produktif": 3110, "pokok_mati": 35, "pokok_sisipan": 25, "produktivitas": 26.8, "produksi": 629800, "status_panen": "Siap Panen", "status_tanaman": "TM", "kondisi": "Baik", "pemupukan_terakhir": "2026-02-08 (NPK)" }, "geometry": { "type": "Polygon", "coordinates": [[[101.454, 0.518], [101.460, 0.518], [101.460, 0.512], [101.454, 0.512], [101.454, 0.518]]] } }
+      ]
+    };
+
+    // INFRASTRUCTURES
+    const CATEGORIZED_INFRASTRUCTURES = [
+      { id: 1, nama: 'Kantor Afdeling 1 & Mess Supervisor', kategori: 'Kantor Afdeling', afdeling: 'Afdeling 1', status: 'Aktif', deskripsi: 'Pusat administrasi Afdeling 1.' },
+      { id: 2, nama: 'Gudang Pupuk Afdeling 1', kategori: 'Gudang Pupuk', afdeling: 'Afdeling 1', status: 'Aktif', deskripsi: 'Kapasitas simpan 300 Ton pupuk.' },
+      { id: 3, nama: 'Stasiun Timbangan TBS Central', kategori: 'Stasiun Timbangan', afdeling: 'Afdeling 2', status: 'Aktif', deskripsi: 'Jembatan timbang digital 50 Ton.' },
+      { id: 4, nama: 'Workshop Alat Berat', kategori: 'Workshop', afdeling: 'Afdeling 2', status: 'Aktif', deskripsi: 'Bengkel traktor & grader jalan.' },
+      { id: 5, nama: 'Perumahan Karyawan & Klinik Kebun', kategori: 'Perumahan', afdeling: 'Afdeling 3', status: 'Aktif', deskripsi: 'Fasilitas 120 KK karyawan & pos kesehatan.' }
+    ];
+
+    // MANDOR EVALUATION
+    const MANDOR_EVALUATION = [
+      { id: 1, nama_mandor: 'Subagyo Sastro', afdeling: 'Afdeling 1', target_ton: 35.0, realisasi_ton: 36.9, pencapaian_pct: 105.4, status: 'MEMENUHI TARGET', catatan: 'Produksi melampaui target, mutu buah matang.' },
+      { id: 2, nama_mandor: 'Rudi Hermawan', afdeling: 'Afdeling 2', target_ton: 36.0, realisasi_ton: 37.5, pencapaian_pct: 104.2, status: 'MEMENUHI TARGET', catatan: 'Pengangkutan TBS cepat dan efisien.' },
+      { id: 3, nama_mandor: 'Tono Warsito', afdeling: 'Afdeling 3', target_ton: 38.0, realisasi_ton: 39.8, pencapaian_pct: 104.7, status: 'MEMENUHI TARGET', catatan: 'Pemanen disiplin dan rotasi panen tepat.' },
+      { id: 4, nama_mandor: 'Slamet Riyadi', afdeling: 'Afdeling 3', target_ton: 25.0, realisasi_ton: 22.1, pencapaian_pct: 88.4, status: 'TIDAK MEMENUHI TARGET', catatan: '⚠️ Terkendala insiden serangan Ulat Api pada Blok C02.' },
+      { id: 5, nama_mandor: 'Bambang Kurniawan', afdeling: 'Afdeling 1', target_ton: 24.0, realisasi_ton: 20.4, pencapaian_pct: 85.0, status: 'TIDAK MEMENUHI TARGET', catatan: '⚠️ Blok A05 masih TBM (Tanaman Belum Menghasilkan).' },
+      { id: 6, nama_mandor: 'Agus Setiawan', afdeling: 'Afdeling 2', target_ton: 30.0, realisasi_ton: 28.2, pencapaian_pct: 94.0, status: 'TIDAK MEMENUHI TARGET', catatan: '⚠️ Terkendala akses jalan licin saat hujan di Blok B03.' }
+    ];
+
+    // ROOT APP
+    function App() {
+      const [activeMenu, setActiveMenu] = useState('dashboard');
+      const [userRole, setUserRole] = useState('Admin');
+      const [selectedBlockCode, setSelectedBlockCode] = useState('A01');
+      
+      const [blocksData, setBlocksData] = useState(INITIAL_BLOCKS_GEOJSON);
+
+      // Filters for Map Page
+      const [mapAfdelingFilter, setMapAfdelingFilter] = useState('Semua');
+      const [mapLayerMode, setMapLayerMode] = useState('status_panen');
+      const [activeBasemap, setActiveBasemap] = useState('osm');
+
+      // TOUR DEMO SIMULATOR STATE (AUTO-PLAYING INTERACTIVE DEMO)
+      const [isTourActive, setIsTourActive] = useState(false);
+      const [tourStep, setTourStep] = useState(0);
+
+      const mapRef = useRef(null);
+      const mapInstanceRef = useRef(null);
+      const detailMapRef = useRef(null);
+      const detailMapInstanceRef = useRef(null);
+
+      // Safe Navigation Handler
+      const handleNavigateToBlock = (code) => {
+        if (!code) return;
+        setSelectedBlockCode(code);
+        setActiveMenu('detail-blok');
+      };
+
+      useEffect(() => {
+        window.openBlockDetail = (code) => {
+          handleNavigateToBlock(code);
+        };
+      }, []);
+
+      // AUTOMATIC INTERACTIVE TOUR SIMULATOR LOGIC (SIMULATES A PLAYING DEMO VIDEO FOR DOSEN)
+      useEffect(() => {
+        let timer;
+        if (isTourActive) {
+          timer = setInterval(() => {
+            setTourStep((prevStep) => {
+              const nextStep = (prevStep + 1) % 5;
+              if (nextStep === 0) {
+                setActiveMenu('dashboard');
+              } else if (nextStep === 1) {
+                setActiveMenu('map');
+                setMapLayerMode('status_panen');
+                setSelectedBlockCode('A02');
+              } else if (nextStep === 2) {
+                setActiveMenu('map');
+                setMapLayerMode('tahun_tanam');
+                setSelectedBlockCode('B01');
+              } else if (nextStep === 3) {
+                setSelectedBlockCode('A04');
+                setActiveMenu('detail-blok');
+              } else if (nextStep === 4) {
+                setActiveMenu('laporan');
+              }
+              return nextStep;
+            });
+          }, 4000); // Advances step every 4 seconds
+        }
+        return () => clearInterval(timer);
+      }, [isTourActive]);
+
+      // LEAFLET MAP MAIN PAGE
+      useEffect(() => {
+        if (activeMenu === 'map' && mapRef.current) {
+          const L = window.L;
+          if (!L) return;
+
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.remove();
+            mapInstanceRef.current = null;
+          }
+
+          const map = L.map(mapRef.current, { zoomControl: false, maxZoom: 18, minZoom: 10 }).setView([0.522, 101.445], 13.5);
+          L.control.zoom({ position: 'topright' }).addTo(map);
+
+          let tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+          if (activeBasemap === 'satellite') {
+            tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+          } else if (activeBasemap === 'dark') {
+            tileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+          }
+
+          L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(map);
+
+          const filteredFeatures = blocksData.features.filter((f) => {
+            if (mapAfdelingFilter !== 'Semua' && f.properties.afdeling !== mapAfdelingFilter) return false;
+            return true;
+          });
+
+          const geoLayer = L.geoJSON({ type: "FeatureCollection", features: filteredFeatures }, {
+            style: (feature) => {
+              const p = feature.properties;
+              let col = getProductivityColor(p.produktivitas);
+
+              if (mapLayerMode === 'tahun_tanam') col = getAgeColor(p.umur_tanaman);
+              else if (mapLayerMode === 'status_panen') col = getHarvestStatusColor(p.status_panen);
+              
+              const isSelected = p.kode_blok === selectedBlockCode;
+              return {
+                fillColor: col,
+                weight: isSelected ? 4 : 2,
+                color: isSelected ? '#fbbf24' : '#0f172a',
+                fillOpacity: isSelected ? 0.9 : 0.75
+              };
+            },
+            onEachFeature: (feature, layer) => {
+              const p = feature.properties;
+              
+              let labelText = `<b>BLOK ${p.kode_blok}</b>`;
+              if (mapLayerMode === 'tahun_tanam') labelText += `<br/>${p.tahun_tanam} (${p.umur_tanaman} thn)`;
+              else if (mapLayerMode === 'status_panen') labelText += `<br/>${p.status_panen}`;
+              else labelText += `<br/>${p.produktivitas} Ton/Ha`;
+
+              layer.bindTooltip(labelText, {
+                permanent: true,
+                direction: 'center',
+                className: 'font-mono text-xs font-extrabold bg-slate-950/90 text-white px-2 py-1 rounded-lg border border-emerald-500 shadow-lg'
+              });
+
+              layer.on('click', (e) => {
+                setSelectedBlockCode(p.kode_blok);
+                L.DomEvent.stopPropagation(e);
+                
+                const popupHtml = `
+                  <div style="font-family: system-ui, sans-serif; font-size: 12px; padding: 4px; min-width: 210px;">
+                    <div style="background: #0f5132; color: white; padding: 8px 10px; border-radius: 8px 8px 0 0; margin: -10px -10px 8px -10px; display: flex; justify-content: space-between; align-items: center;">
+                      <b style="font-size: 14px;">🌴 BLOK ${p.kode_blok}</b>
+                      <span style="font-size: 10px; background: rgba(255,255,255,0.25); padding: 2px 6px; border-radius: 4px; font-weight: bold;">${p.afdeling}</span>
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 11px;">
+                      <tr><td style="color: #64748b; padding: 2px 0;">Luas Areal:</td><td style="font-weight: bold; text-align: right;">${p.luas} Ha</td></tr>
+                      <tr><td style="color: #64748b; padding: 2px 0;">Tahun Tanam / Umur:</td><td style="font-weight: bold; text-align: right;">${p.tahun_tanam} (${p.umur_tanaman} thn)</td></tr>
+                      <tr><td style="color: #64748b; padding: 2px 0;">Status Panen Blok:</td><td style="font-weight: bold; text-align: right; color: ${getHarvestStatusColor(p.status_panen)};">${p.status_panen}</td></tr>
+                      <tr><td style="color: #64748b; padding: 2px 0;">Produktivitas:</td><td style="font-weight: bold; text-align: right; color: ${getProductivityColor(p.produktivitas)};">${p.produktivitas} Ton/Ha</td></tr>
+                    </table>
+                    <button onclick="window.openBlockDetail('${p.kode_blok}')" style="width: 100%; background: #0f5132; color: white; border: none; padding: 8px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">
+                      Lihat Detail Blok ${p.kode_blok} ➔
+                    </button>
+                  </div>
+                `;
+                layer.bindPopup(popupHtml).openPopup();
+              });
+            }
+          }).addTo(map);
+
+          if (geoLayer.getBounds().isValid()) {
+            map.fitBounds(geoLayer.getBounds(), { padding: [40, 40], maxZoom: 14.5 });
+          }
+
+          setTimeout(() => {
+            if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+          }, 200);
+
+          mapInstanceRef.current = map;
+        }
+
+        return () => {
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.remove();
+            mapInstanceRef.current = null;
+          }
+        };
+      }, [activeMenu, mapAfdelingFilter, mapLayerMode, activeBasemap, blocksData, selectedBlockCode]);
+
+      // LEAFLET MAP SINGLE POLYGON ON DETAIL BLOK PAGE
+      useEffect(() => {
+        if (activeMenu === 'detail-blok' && detailMapRef.current) {
+          const L = window.L;
+          if (!L) return;
+
+          if (detailMapInstanceRef.current) {
+            detailMapInstanceRef.current.remove();
+            detailMapInstanceRef.current = null;
+          }
+
+          const feat = blocksData.features.find((f) => f.properties.kode_blok === selectedBlockCode) || blocksData.features[0];
+
+          const map = L.map(detailMapRef.current, { zoomControl: true, maxZoom: 17 }).setView([0.522, 101.445], 15);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+          const layer = L.geoJSON(feat, {
+            style: {
+              fillColor: getProductivityColor(feat.properties.produktivitas),
+              weight: 4,
+              color: '#fbbf24',
+              fillOpacity: 0.85
+            }
+          }).addTo(map);
+
+          if (layer.getBounds().isValid()) {
+            const center = layer.getBounds().getCenter();
+            L.marker(center).addTo(map).bindPopup(`<b>BLOK ${feat.properties.kode_blok}</b><br/>${feat.properties.afdeling}`).openPopup();
+            map.fitBounds(layer.getBounds(), { padding: [35, 35], maxZoom: 15.5 });
+          }
+
+          setTimeout(() => {
+            if (detailMapInstanceRef.current) detailMapInstanceRef.current.invalidateSize();
+          }, 200);
+
+          detailMapInstanceRef.current = map;
+        }
+      }, [activeMenu, selectedBlockCode]);
+
+      const selectedBlockFeature = blocksData.features.find((f) => f.properties.kode_blok === selectedBlockCode) || blocksData.features[0];
+      const selectedBlock = selectedBlockFeature.properties;
+
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+          
+          {/* Top Navbar */}
+          <header className="bg-emerald-900 text-white px-4 py-2.5 flex items-center justify-between border-b border-emerald-800 shadow-md sticky top-0 z-40">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center text-emerald-950 font-black text-xl shadow border border-emerald-300/40">
+                🌴
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-xl tracking-tight">SIGAP SAWIT</span>
+                  <span className="text-[10px] bg-emerald-700 text-emerald-200 px-2 py-0.5 rounded font-bold border border-emerald-600 uppercase">Prototype Dosen v2.9</span>
+                </div>
+                <p className="text-[11px] text-emerald-200">Sistem Informasi Geografis Perkebunan Kelapa Sawit</p>
+              </div>
+            </div>
+
+            {/* TOUR SIMULATOR BUTTON (AUTOMATIC DEMO FOR PRESENTATION) */}
+            <div className="flex items-center gap-3 text-xs">
+              <button
+                onClick={() => setIsTourActive(!isTourActive)}
+                className={`px-4 py-1.5 rounded-xl font-bold transition shadow-lg flex items-center gap-2 ${
+                  isTourActive
+                    ? 'bg-amber-500 text-slate-950 animate-pulse border-2 border-white'
+                    : 'bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-500'
+                }`}
+                title="Putar tur simulasi presentasi otomatis"
+              >
+                <span>{isTourActive ? '⏸️ Hentikan Tur Demo' : '▶️ Tur Simulasi Demo Dosen'}</span>
+              </button>
+
+              <span className="bg-emerald-950 text-emerald-300 px-3 py-1 rounded-lg border border-emerald-700 font-bold hidden sm:inline">
+                Role: {userRole}
+              </span>
+            </div>
+          </header>
+
+          {/* Body Container */}
+          <div className="flex-1 flex">
+            
+            {/* Sidebar Navigation */}
+            <aside className="w-64 bg-slate-900 border-r border-slate-800 p-3 space-y-1 text-xs shrink-0 custom-scrollbar overflow-y-auto max-h-[calc(100vh-57px)] sticky top-[57px]">
+              <div className="px-3 py-1.5 text-[10px] font-bold uppercase text-slate-500 tracking-widest">Navigasi SIGAP Sawit</div>
+              
+              {[
+                { id: 'dashboard', label: 'Dashboard Utama', icon: '📊' },
+                { id: 'map', label: 'Peta Kebun (GIS HD)', icon: '🗺️', badge: 'HD' },
+                { id: 'data-blok', label: 'Data Blok Master', icon: '📋' },
+                { id: 'detail-blok', label: 'Detail Blok (Pilih Blok)', icon: '🔍', badge: 'Pilih Blok' },
+                { id: 'data-tanaman', label: 'Data Tanaman & Umur', icon: '🌱' },
+                { id: 'panen', label: 'Monitoring Panen Blok', icon: '🚛' },
+                { id: 'pemupukan', label: 'Monitoring Pemupukan', icon: '💧' },
+                { id: 'hama', label: 'Monitoring Hama (OPT)', icon: '🐛' },
+                { id: 'infrastruktur', label: 'Infrastruktur Afdeling', icon: '🏢' },
+                { id: 'laporan', label: 'Laporan Evaluasi Mandor', icon: '📄', badge: 'Evaluasi' }
+              ].map((menu) => (
+                <button
+                  key={menu.id}
+                  onClick={() => setActiveMenu(menu.id)}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl font-semibold flex items-center justify-between transition ${
+                    activeMenu === menu.id ? 'bg-emerald-700 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span>{menu.icon}</span>
+                    <span>{menu.label}</span>
+                  </div>
+                  {menu.badge && <span className="bg-emerald-950 text-emerald-300 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-600">{menu.badge}</span>}
+                </button>
+              ))}
+            </aside>
+
+            {/* Main Display Window */}
+            <main className="flex-1 p-6 bg-slate-950 overflow-y-auto">
+              
+              {/* MENU 1: DASHBOARD */}
+              {activeMenu === 'dashboard' && (
+                <div className="space-y-6">
+                  <div className="bg-gradient-to-r from-emerald-950 via-emerald-900 to-slate-900 border border-emerald-800 p-6 rounded-2xl shadow-xl flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                      <h1 className="text-2xl font-black text-white">SIGAP Sawit Enterprise Dashboard</h1>
+                      <p className="text-xs text-slate-300 mt-1">Monitoring Spasial Perkebunan Sawit untuk Presentasi Dosen Pembimbing</p>
+                    </div>
+                    <button onClick={() => setActiveMenu('map')} className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-bold rounded-xl text-xs shadow-lg">
+                      Buka Peta Kebun GIS HD ➔
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow">
+                      <span className="text-slate-400 block font-semibold text-[10px] uppercase">Total Luas Kebun</span>
+                      <span className="text-2xl font-black text-white">2.450 <span className="text-xs font-normal text-slate-400">Ha</span></span>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow">
+                      <span className="text-slate-400 block font-semibold text-[10px] uppercase">Total Afdeling / Blok</span>
+                      <span className="text-2xl font-black text-white">3 <span className="text-xs font-normal text-slate-400">Afd</span> / 86 <span className="text-xs font-normal text-slate-400">Blok</span></span>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow">
+                      <span className="text-slate-400 block font-semibold text-[10px] uppercase">Produktivitas Rata-Rata</span>
+                      <span className="text-2xl font-black text-emerald-400">23,8 <span className="text-xs font-normal text-slate-400">Ton/Ha</span></span>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow">
+                      <span className="text-slate-400 block font-semibold text-[10px] uppercase">Evaluasi Target Mandor</span>
+                      <span className="text-2xl font-black text-amber-400">3 Mandor <span className="text-xs font-normal text-red-400">Under Target</span></span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MENU 2: PETA KEBUN (GIS HD) */}
+              {activeMenu === 'map' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                    <div>
+                      <h1 className="text-xl font-bold text-white flex items-center gap-2">
+                        <span>🗺️ Peta Kebun GIS (Batas Blok, Panen & Umur Tanaman)</span>
+                      </h1>
+                      <p className="text-xs text-slate-400 mt-0.5">Pilih mode tampilan layer pada peta di samping kanan:</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs flex-wrap">
+                      <div className="bg-slate-950 border border-slate-800 p-1 rounded-xl flex gap-1 text-[11px]">
+                        <button onClick={() => setActiveBasemap('osm')} className={`px-2.5 py-1 rounded-lg font-semibold ${activeBasemap === 'osm' ? 'bg-emerald-700 text-white' : 'text-slate-400'}`}>Peta Jalan HD</button>
+                        <button onClick={() => setActiveBasemap('satellite')} className={`px-2.5 py-1 rounded-lg font-semibold ${activeBasemap === 'satellite' ? 'bg-emerald-700 text-white' : 'text-slate-400'}`}>Satelit HD</button>
+                        <button onClick={() => setActiveBasemap('dark')} className={`px-2.5 py-1 rounded-lg font-semibold ${activeBasemap === 'dark' ? 'bg-emerald-700 text-white' : 'text-slate-400'}`}>Dark Mode HD</button>
+                      </div>
+
+                      <select value={mapLayerMode} onChange={(e) => setMapLayerMode(e.target.value)} className="bg-emerald-950 border border-emerald-700 text-emerald-200 font-bold rounded-xl px-3 py-1.5 shadow">
+                        <option value="status_panen">Layer: Status Panen Blok 🚚</option>
+                        <option value="tahun_tanam">Layer: Umur Tanaman Sawit 🌱</option>
+                        <option value="produktivitas">Layer: Produktivitas Ton/Ha</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="w-full h-[600px] rounded-2xl overflow-hidden border border-slate-800 relative shadow-2xl">
+                    <div ref={mapRef} className="w-full h-full z-0" />
+                  </div>
+                </div>
+              )}
+
+              {/* MENU 4: DETAIL BLOK WITH DYNAMIC BLOCK SELECTOR */}
+              {activeMenu === 'detail-blok' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between bg-slate-900 border border-slate-800 p-5 rounded-2xl flex-wrap gap-4">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <h1 className="text-2xl font-black text-white">DETAIL BLOK:</h1>
+                          
+                          <select
+                            value={selectedBlockCode}
+                            onChange={(e) => setSelectedBlockCode(e.target.value)}
+                            className="bg-emerald-950 text-emerald-300 font-black text-xl px-4 py-1.5 rounded-xl border-2 border-emerald-600 focus:outline-none cursor-pointer shadow-lg"
+                          >
+                            {blocksData.features.map((f) => (
+                              <option key={f.properties.kode_blok} value={f.properties.kode_blok}>
+                                BLOK {f.properties.kode_blok} ({f.properties.afdeling})
+                              </option>
+                            ))}
+                          </select>
+
+                          <span className={`text-xs font-bold px-3 py-1 rounded-xl ${getProductivityBadgeClass(selectedBlock.produktivitas)}`}>
+                            {selectedBlock.produktivitas} Ton/Ha
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">Ubah blok pada dropdown di atas untuk melihat polygon & atribut blok lain secara langsung!</p>
+                      </div>
+                    </div>
+
+                    <button onClick={() => handleNavigateToBlock(selectedBlock.kode_blok)} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow">
+                      🗺️ Lihat di Peta GIS Utama
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
+                      <h2 className="font-bold text-sm text-white border-b border-slate-800 pb-2">Informasi Spasial & Tanaman Blok {selectedBlock.kode_blok}</h2>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800"><span className="text-slate-400 block text-[10px]">Luas Areal</span><span className="text-lg font-black text-white">{selectedBlock.luas} Ha</span></div>
+                        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800"><span className="text-slate-400 block text-[10px]">Tahun Tanam</span><span className="text-lg font-black text-white">{selectedBlock.tahun_tanam} ({selectedBlock.umur_tanaman} thn)</span></div>
+                        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800"><span className="text-slate-400 block text-[10px]">Status Panen</span><span className="text-sm font-bold text-amber-400">{selectedBlock.status_panen}</span></div>
+                        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800"><span className="text-slate-400 block text-[10px]">Varietas Sawit</span><span className="text-sm font-bold text-emerald-400">{selectedBlock.varietas}</span></div>
+                      </div>
+
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div><span className="text-slate-400 block">Total Pokok:</span><span className="font-bold text-white text-sm">{selectedBlock.jumlah_pokok.toLocaleString()}</span></div>
+                        <div><span className="text-slate-400 block">Pokok Produktif:</span><span className="font-bold text-emerald-400 text-sm">{selectedBlock.pokok_produktif ? selectedBlock.pokok_produktif.toLocaleString() : '3.380'}</span></div>
+                        <div><span className="text-slate-400 block">Pokok Mati:</span><span className="font-bold text-red-400 text-sm">{selectedBlock.pokok_mati ?? 35}</span></div>
+                        <div><span className="text-slate-400 block">Pokok Sisipan:</span><span className="font-bold text-amber-400 text-sm">{selectedBlock.pokok_sisipan ?? 25}</span></div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h2 className="font-bold text-sm text-white">Batas Polygon Single Blok {selectedBlock.kode_blok}</h2>
+                        <span className="text-[10px] bg-amber-950 text-amber-300 font-bold px-2 py-0.5 rounded border border-amber-700">Border Emas HD</span>
+                      </div>
+                      <div className="w-full h-64 rounded-xl overflow-hidden border-2 border-amber-500 shadow-2xl">
+                        <div ref={detailMapRef} className="w-full h-full" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MENU 7: MONITORING PEMUPUKAN */}
+              {activeMenu === 'pemupukan' && (
+                <div className="space-y-6">
+                  <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl">
+                    <h1 className="text-xl font-extrabold text-white flex items-center gap-2">
+                      <span>💧 Monitoring Pemupukan Perkebunan (15 Blok)</span>
+                    </h1>
+                    <p className="text-xs text-slate-400 mt-1">Daftar lengkap status aplikasi pupuk NPK, Urea, KCL, Dolomit, dan Rock Phosphate per afdeling.</p>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 uppercase text-[10px]">
+                          <th className="p-3">Tanggal Aplikasi</th>
+                          <th className="p-3">Kode Blok (Afdeling)</th>
+                          <th className="p-3">Jenis Pupuk</th>
+                          <th className="p-3">Dosis (Kg/Pokok)</th>
+                          <th className="p-3">Total Tonase</th>
+                          <th className="p-3">Mandor Penanggung Jawab</th>
+                          <th className="p-3">Status Pemupukan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                        {blocksData.features.map((f, i) => {
+                          const p = f.properties;
+                          const isDone = i % 3 !== 2;
+                          return (
+                            <tr key={p.kode_blok} className="hover:bg-slate-800/50">
+                              <td className="p-3 font-mono text-slate-400">2026-02-15</td>
+                              <td className="p-3 font-bold text-emerald-400">
+                                <button onClick={() => handleNavigateToBlock(p.kode_blok)} className="hover:underline">
+                                  BLOK {p.kode_blok} ({p.afdeling})
+                                </button>
+                              </td>
+                              <td className="p-3 font-semibold text-white">{i % 2 === 0 ? 'NPK 15-15-15' : 'Urea & KCL'}</td>
+                              <td className="p-3 font-mono">2.5 Kg/Pokok</td>
+                              <td className="p-3 font-bold text-white">8.5 Ton</td>
+                              <td className="p-3 text-slate-300">{p.afdeling === 'Afdeling 1' ? 'Bambang Kurniawan' : (p.afdeling === 'Afdeling 2' ? 'Agus Setiawan' : 'Slamet Riyadi')}</td>
+                              <td className="p-3">
+                                <span className={`px-2.5 py-1 rounded text-[10px] font-bold ${isDone ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-amber-950 text-amber-400 border border-amber-800'}`}>
+                                  {isDone ? 'Selesai Dipupuk' : 'Sedang Berlangsung'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* MENU 9: INFRASTRUKTUR AFDELING */}
+              {activeMenu === 'infrastruktur' && (
+                <div className="space-y-6">
+                  <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl">
+                    <h1 className="text-xl font-extrabold text-white flex items-center gap-2">
+                      <span>🏢 Inventarisasi Infrastruktur per Afdeling</span>
+                    </h1>
+                    <p className="text-xs text-slate-400 mt-1">Stasiun timbangan, gudang pupuk, workshop, kantor afdeling, & TPH terbagi secara jelas per afdeling.</p>
+                  </div>
+
+                  {['Afdeling 1', 'Afdeling 2', 'Afdeling 3'].map((afd) => (
+                    <div key={afd} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <h2 className="font-extrabold text-base text-emerald-400">FAKILITAS & ASET {afd.toUpperCase()}</h2>
+                        <span className="text-xs text-slate-400">3 Fasilitas Utama</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                        {CATEGORIZED_INFRASTRUCTURES.filter(i => i.afdeling === afd).map(item => (
+                          <div key={item.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                            <span className="font-bold text-white text-sm block">{item.nama}</span>
+                            <span className="bg-emerald-950 text-emerald-300 border border-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold">{item.kategori}</span>
+                            <p className="text-slate-400 text-[11px] leading-relaxed pt-1">{item.deskripsi}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* MENU 10: LAPORAN EVALUASI MANDOR */}
+              {activeMenu === 'laporan' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between bg-slate-900 border border-slate-800 p-5 rounded-2xl flex-wrap gap-4">
+                    <div>
+                      <h1 className="text-xl font-extrabold text-white flex items-center gap-2">
+                        <span>📄 Laporan Evaluasi Kinerja Mandor & Target Produksi</span>
+                      </h1>
+                      <p className="text-xs text-slate-400 mt-1">Rekapitulasi resmi kinerja Mandor Panen yang memenuhi target vs yang tidak memenuhi target.</p>
+                    </div>
+
+                    <button onClick={() => window.print()} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700">
+                      🖨️ Cetak Laporan Resmi
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl p-5 space-y-4">
+                    <h2 className="font-bold text-sm text-white">Tabel Evaluasi Capaian Target Mandor Panen</h2>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 uppercase text-[10px]">
+                            <th className="p-3">Nama Mandor</th>
+                            <th className="p-3">Afdeling Tugas</th>
+                            <th className="p-3">Target (Ton)</th>
+                            <th className="p-3">Realisasi (Ton)</th>
+                            <th className="p-3">Capaian (%)</th>
+                            <th className="p-3">Status Target</th>
+                            <th className="p-3">Analisis / Catatan</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800 text-slate-300">
+                          {MANDOR_EVALUATION.map((m) => (
+                            <tr key={m.id} className={`hover:bg-slate-800/60 ${m.status === 'TIDAK MEMENUHI TARGET' ? 'bg-red-950/20' : ''}`}>
+                              <td className="p-3 font-bold text-white text-sm">{m.nama_mandor}</td>
+                              <td className="p-3 font-semibold">{m.afdeling}</td>
+                              <td className="p-3 font-mono">{m.target_ton} Ton</td>
+                              <td className="p-3 font-mono font-bold text-white">{m.realisasi_ton} Ton</td>
+                              <td className="p-3 font-mono font-bold text-emerald-400">{m.pencapaian_pct}%</td>
+                              <td className="p-3">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${
+                                  m.status === 'MEMENUHI TARGET' ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' : 'bg-red-950 text-red-400 border border-red-800'
+                                }`}>
+                                  {m.status === 'MEMENUHI TARGET' ? '🎯 MEMENUHI TARGET' : '⚠️ TIDAK MEMENUHI TARGET'}
+                                </span>
+                              </td>
+                              <td className="p-3 text-[11px] text-slate-400">{m.catatan}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MENU DATA BLOK, DATA TANAMAN, PANEN, HAMA */}
+              {activeMenu === 'data-blok' && (
+                <div className="space-y-4">
+                  <h1 className="text-xl font-bold text-white">📋 Master Data Blok Perkebunan</h1>
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 uppercase text-[10px]">
+                        <tr>
+                          <th className="p-3">Kode Blok</th>
+                          <th className="p-3">Afdeling</th>
+                          <th className="p-3">Luas (Ha)</th>
+                          <th className="p-3">Tanam (Umur)</th>
+                          <th className="p-3">Status Panen</th>
+                          <th className="p-3">Jumlah Pokok</th>
+                          <th className="p-3">Produktivitas</th>
+                          <th className="p-3 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                        {blocksData.features.map((f) => {
+                          const p = f.properties;
+                          return (
+                            <tr key={p.kode_blok} className="hover:bg-slate-800/50">
+                              <td className="p-3 font-bold text-emerald-400">{p.kode_blok}</td>
+                              <td className="p-3">{p.afdeling}</td>
+                              <td className="p-3 font-semibold text-white">{p.luas} Ha</td>
+                              <td className="p-3">{p.tahun_tanam} <span className="text-[10px] text-slate-400">({p.umur_tanaman} thn)</span></td>
+                              <td className="p-3 font-bold" style={{ color: getHarvestStatusColor(p.status_panen) }}>{p.status_panen}</td>
+                              <td className="p-3 font-mono">{p.jumlah_pokok.toLocaleString()}</td>
+                              <td className="p-3"><span className={`px-2 py-0.5 rounded font-bold text-[11px] ${getProductivityBadgeClass(p.produktivitas)}`}>{p.produktivitas} Ton/Ha</span></td>
+                              <td className="p-3 text-right">
+                                <button onClick={() => handleNavigateToBlock(p.kode_blok)} className="px-2.5 py-1 bg-emerald-950 text-emerald-400 border border-emerald-700 rounded-lg font-bold text-[11px]">
+                                  Detail Blok ➔
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {activeMenu === 'data-tanaman' && (
+                <div className="space-y-6">
+                  <h1 className="text-xl font-bold text-white">🌱 Sensus & Distribusi Umur Tanaman Sawit</h1>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl"><span className="text-slate-400 font-semibold block">0–3 Thn (TBM)</span><span className="text-2xl font-black text-blue-400">2 Blok</span></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl"><span className="text-slate-400 font-semibold block">4–7 Thn (TM Muda)</span><span className="text-2xl font-black text-emerald-400">4 Blok</span></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl"><span className="text-slate-400 font-semibold block">8–15 Thn (TM Prima)</span><span className="text-2xl font-black text-emerald-500">7 Blok</span></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl"><span className="text-slate-400 font-semibold block">16–20 Thn (TM Tua)</span><span className="text-2xl font-black text-amber-400">2 Blok</span></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl"><span className="text-slate-400 font-semibold block">&gt; 20 Thn (Renta)</span><span className="text-2xl font-black text-red-400">0 Blok</span></div>
+                  </div>
+                </div>
+              )}
+
+              {activeMenu === 'panen' && (
+                <div className="space-y-6">
+                  <h1 className="text-xl font-bold text-white">🚛 Monitoring Realisasi Panen TBS 15 Blok</h1>
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 uppercase text-[10px]">
+                          <th className="p-3">Tanggal</th>
+                          <th className="p-3">Kode Blok (Afdeling)</th>
+                          <th className="p-3">Mandor Penanggung Jawab</th>
+                          <th className="p-3">Tim Pemanen</th>
+                          <th className="p-3">Hasil TBS (Kg)</th>
+                          <th className="p-3">Produktivitas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                        {blocksData.features.map((f, i) => (
+                          <tr key={f.properties.kode_blok} className="hover:bg-slate-800/50">
+                            <td className="p-3 font-mono text-slate-400">2026-03-13</td>
+                            <td className="p-3 font-bold text-emerald-400">
+                              <button onClick={() => handleNavigateToBlock(f.properties.kode_blok)} className="hover:underline">
+                                BLOK {f.properties.kode_blok} ({f.properties.afdeling})
+                              </button>
+                            </td>
+                            <td className="p-3 font-semibold text-white">{i % 2 === 0 ? 'Subagyo Sastro' : 'Rudi Hermawan'}</td>
+                            <td className="p-3 font-bold text-amber-400">Paiman & Tim {i + 1}</td>
+                            <td className="p-3 font-bold text-white">{(f.properties.produksi / 40).toLocaleString()} Kg</td>
+                            <td className="p-3 font-mono font-bold text-emerald-400">{f.properties.produktivitas * 50} Kg/Ha</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {activeMenu === 'hama' && (
+                <div className="space-y-6">
+                  <h1 className="text-xl font-bold text-white">🐛 Monitoring & Pengendalian Hama (OPT)</h1>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    {blocksData.features.slice(0, 6).map((f) => (
+                      <div key={f.properties.kode_blok} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-2">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <span className="font-extrabold text-white text-base">BLOK {f.properties.kode_blok} ({f.properties.afdeling})</span>
+                          <span className="px-2.5 py-0.5 rounded font-bold bg-red-950 text-red-400 border border-red-800">Insiden Hama</span>
+                        </div>
+                        <p className="text-slate-300">Hama Utama: <b className="text-white">{f.properties.hama_terakhir || 'Ulat Api'}</b></p>
+                        <button onClick={() => handleNavigateToBlock(f.properties.kode_blok)} className="px-3 py-1.5 bg-emerald-950 text-emerald-400 font-bold rounded-lg border border-emerald-800">
+                          Buka Detail Blok {f.properties.kode_blok} ➔
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </main>
+          </div>
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
